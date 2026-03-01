@@ -200,21 +200,22 @@ func (s *store) HardDelete(ctx context.Context, id string) error {
 // Search 根据关键词和 Tag 过滤检索知识条目。
 func (s *store) Search(ctx context.Context, q SearchQuery) ([]*KnowledgeEntry, error) {
 	where := []string{"1=1"}
-	args := []any{}
+	var whereArgs []any
 
 	if q.Status != 0 {
 		where = append(where, "e.status = ?")
-		args = append(args, q.Status)
-	} else {
-		where = append(where, "e.status = ?")
-		args = append(args, KnowledgeStatusActive)
+		whereArgs = append(whereArgs, q.Status)
 	}
 
 	if q.Q != "" {
 		where = append(where, "(e.title LIKE ? OR e.summary LIKE ? OR e.body LIKE ?)")
 		like := "%" + q.Q + "%"
-		args = append(args, like, like, like)
+		whereArgs = append(whereArgs, like, like, like)
 	}
+
+	// Tag JOIN args must be ordered before WHERE args because JOINs appear first in SQL.
+	var tagArgs []any
+	tagJoin := s.buildTagJoin(q.Tags, &tagArgs)
 
 	baseQ := fmt.Sprintf(`
 		SELECT DISTINCT e.id, e.title, e.summary, e.body, e.author, e.weight, e.status,
@@ -224,7 +225,7 @@ func (s *store) Search(ctx context.Context, q SearchQuery) ([]*KnowledgeEntry, e
 		WHERE %s
 		ORDER BY e.%s %s
 		LIMIT ? OFFSET ?`,
-		s.buildTagJoin(q.Tags, &args),
+		tagJoin,
 		strings.Join(where, " AND "),
 		s.safeOrderBy(q.OrderBy),
 		s.orderDir(q.Descending),
@@ -234,6 +235,7 @@ func (s *store) Search(ctx context.Context, q SearchQuery) ([]*KnowledgeEntry, e
 	if limit <= 0 {
 		limit = 20
 	}
+	args := append(tagArgs, whereArgs...)
 	args = append(args, limit, q.Offset)
 
 	rows, err := s.db.QueryContext(ctx, baseQ, args...)
