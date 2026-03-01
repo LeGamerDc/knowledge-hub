@@ -25,4 +25,4 @@ seed:
 clean:
 	rm -f internal/server/handlers/api.gen.go
 	rm -f pkg/khclient/client.gen.go
-	rm -rf bin/
+	rm -rf bin/*
