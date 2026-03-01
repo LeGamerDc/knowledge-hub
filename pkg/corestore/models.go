@@ -123,6 +123,7 @@ type FlaggedEntry struct {
 	Entry          *KnowledgeEntry
 	FailureCount   int
 	RecentComments []*Comment
+	FlagReasons    []string // 触发 flag 的原因列表
 }
 
 // SimilarPair 代表两条 Tag 重叠度高的知识条目对。
@@ -167,9 +168,9 @@ type UpdateFields struct {
 
 // TagHealthReport 是 Tag 健康检查报告。
 type TagHealthReport struct {
-	SynonymPairs []SynonymPair // 编辑距离 <= 2 的 Tag 对
-	LowFreqTags  []*Tag        // frequency <= 1 的 Tag
-	HighFreqTags []*Tag        // frequency >= 20 的 Tag（可能需要拆分）
+	SynonymPairs []SynonymPair // 编辑距离 <=2、子串、共现率 >80%、别名匹配的 Tag 对
+	LowFreqTags  []*Tag        // frequency < 3 的 Tag
+	HighFreqTags []*Tag        // 占 ACTIVE 条目数 30%+ 的 Tag
 }
 
 // SynonymPair 是疑似同义的 Tag 对。

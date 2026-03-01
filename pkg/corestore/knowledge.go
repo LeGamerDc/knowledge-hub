@@ -392,60 +392,122 @@ func (s *store) FindSimilar(ctx context.Context) ([]*SimilarPair, error) {
 	return pairs, nil
 }
 
-// ListFlagged 返回在滑动窗口内 failure+correction 评论达到阈值的条目。
+// ListFlagged 返回满足任意 flag 条件的知识条目。
+//
+// flag 条件（任一满足即返回）：
+//   - needs_rewrite = true（追加次数超阈值）
+//   - 30+ 天未被访问（stale_access）
+//   - 有未处理评论（has_unprocessed_comments）
+//   - failure 评论占未处理评论比例 > 50%（high_failure_rate）
+//   - 滑动窗口内 failure+correction 未处理评论 >= FlagThreshold（failure_eviction）
 func (s *store) ListFlagged(ctx context.Context) ([]*FlaggedEntry, error) {
 	cutoff := time.Now().UTC().AddDate(0, 0, -FlagWindowDays).Format("2006-01-02 15:04:05")
+	staleAt := time.Now().UTC().AddDate(0, 0, -30)
 
+	// 单查询获取所有 ACTIVE 条目及其评论统计（LEFT JOIN 避免 N+1）
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT c.knowledge_id, COUNT(*) as cnt
-		FROM comments c
-		JOIN knowledge_entries e ON e.id = c.knowledge_id
-		WHERE c.type IN (?, ?) AND c.created_at >= ? AND e.status = ? AND c.processed = 0
-		GROUP BY c.knowledge_id
-		HAVING cnt >= ?`,
-		CommentTypeFailure, CommentTypeCorrection,
-		cutoff, KnowledgeStatusActive, FlagThreshold,
+		SELECT
+			e.id,
+			e.needs_rewrite,
+			e.accessed_at,
+			COUNT(c.id) AS total_comments,
+			COALESCE(SUM(CASE WHEN c.type = ? AND c.processed = 0 THEN 1 ELSE 0 END), 0) AS failure_count,
+			COALESCE(SUM(CASE WHEN c.processed = 0 THEN 1 ELSE 0 END), 0) AS unprocessed_count,
+			COALESCE(SUM(CASE WHEN c.type IN (?,?) AND c.created_at >= ? AND c.processed = 0 THEN 1 ELSE 0 END), 0) AS recent_fc
+		FROM knowledge_entries e
+		LEFT JOIN comments c ON c.knowledge_id = e.id
+		WHERE e.status = ?
+		GROUP BY e.id, e.needs_rewrite, e.accessed_at`,
+		CommentTypeFailure,
+		CommentTypeFailure, CommentTypeCorrection, cutoff,
+		KnowledgeStatusActive,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("query flagged: %w", err)
 	}
 
-	// 先收集 rows，关闭后再做后续查询（避免嵌套查询死锁）
-	type flagInfo struct {
-		knowledgeID string
-		cnt         int
+	type entryStats struct {
+		id              string
+		needsRewrite    bool
+		accessedAt      time.Time
+		totalComments   int
+		failureCount    int
+		unprocessedCount int
+		recentFC        int
 	}
-	var infos []flagInfo
+	var stats []entryStats
 	for rows.Next() {
-		var fi flagInfo
-		if err := rows.Scan(&fi.knowledgeID, &fi.cnt); err != nil {
+		var st entryStats
+		if err := rows.Scan(
+			&st.id, &st.needsRewrite, &st.accessedAt,
+			&st.totalComments, &st.failureCount, &st.unprocessedCount, &st.recentFC,
+		); err != nil {
 			rows.Close()
 			return nil, err
 		}
-		infos = append(infos, fi)
+		stats = append(stats, st)
 	}
 	rows.Close()
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
 
-	var flagged []*FlaggedEntry
-	for _, fi := range infos {
-		entry, err := s.GetByID(ctx, fi.knowledgeID)
-		if err != nil {
-			continue
+	type flagMeta struct {
+		reasons      []string
+		failureCount int
+	}
+	flagMap := map[string]flagMeta{}
+	var flaggedIDs []string
+
+	for _, st := range stats {
+		var reasons []string
+		if st.needsRewrite {
+			reasons = append(reasons, "needs_rewrite")
 		}
-		comments, err := s.GetUnprocessed(ctx, fi.knowledgeID)
-		if err != nil {
-			continue
+		if st.accessedAt.Before(staleAt) {
+			reasons = append(reasons, "stale_access")
 		}
-		flagged = append(flagged, &FlaggedEntry{
+		if st.unprocessedCount > 0 {
+			reasons = append(reasons, "has_unprocessed_comments")
+		}
+		if st.unprocessedCount > 0 && float64(st.failureCount)/float64(st.unprocessedCount) > 0.5 {
+			reasons = append(reasons, "high_failure_rate")
+		}
+		if st.recentFC >= FlagThreshold {
+			reasons = append(reasons, "failure_eviction")
+		}
+
+		if len(reasons) > 0 {
+			flaggedIDs = append(flaggedIDs, st.id)
+			flagMap[st.id] = flagMeta{reasons: reasons, failureCount: st.failureCount}
+		}
+	}
+
+	if len(flaggedIDs) == 0 {
+		return nil, nil
+	}
+
+	// 批量加载 flagged 条目（不经过 GetByID，避免更新 access_count/accessed_at）
+	entries, err := s.fetchEntriesByIDs(ctx, flaggedIDs)
+	if err != nil {
+		return nil, err
+	}
+
+	var result []*FlaggedEntry
+	for _, entry := range entries {
+		comments, err := s.GetUnprocessed(ctx, entry.ID)
+		if err != nil {
+			return nil, err
+		}
+		meta := flagMap[entry.ID]
+		result = append(result, &FlaggedEntry{
 			Entry:          entry,
-			FailureCount:   fi.cnt,
+			FailureCount:   meta.failureCount,
 			RecentComments: comments,
+			FlagReasons:    meta.reasons,
 		})
 	}
-	return flagged, nil
+	return result, nil
 }
 
 // ---- 私有辅助方法 ----

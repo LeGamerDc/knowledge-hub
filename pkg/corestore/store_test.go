@@ -2,6 +2,7 @@ package corestore_test
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	"github.com/legamerdc/knowledge-hub/pkg/corestore"
@@ -544,7 +545,7 @@ func TestBrowseFacets_SmallResult(t *testing.T) {
 	}
 }
 
-func TestListFlagged(t *testing.T) {
+func TestListFlagged_FailureEviction(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()
 
@@ -566,5 +567,242 @@ func TestListFlagged(t *testing.T) {
 	}
 	if flagged[0].Entry.ID != id {
 		t.Error("flagged entry ID mismatch")
+	}
+	hasReason := false
+	for _, r := range flagged[0].FlagReasons {
+		if r == "failure_eviction" {
+			hasReason = true
+		}
+	}
+	if !hasReason {
+		t.Errorf("expected failure_eviction reason, got %v", flagged[0].FlagReasons)
+	}
+}
+
+func TestListFlagged_NeedsRewrite(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+
+	id, _ := s.Create(ctx, &corestore.KnowledgeEntry{Title: "Rewrite Me"})
+
+	// 追加超过阈值次数触发 needs_rewrite
+	for i := 0; i < corestore.AppendThreshold; i++ {
+		if err := s.Append(ctx, id, "supplement", "extra"); err != nil {
+			t.Fatalf("Append #%d: %v", i, err)
+		}
+	}
+
+	flagged, err := s.ListFlagged(ctx)
+	if err != nil {
+		t.Fatalf("ListFlagged: %v", err)
+	}
+
+	var found *corestore.FlaggedEntry
+	for _, f := range flagged {
+		if f.Entry.ID == id {
+			found = f
+			break
+		}
+	}
+	if found == nil {
+		t.Fatal("expected flagged entry for needs_rewrite")
+	}
+	hasReason := false
+	for _, r := range found.FlagReasons {
+		if r == "needs_rewrite" {
+			hasReason = true
+		}
+	}
+	if !hasReason {
+		t.Errorf("expected needs_rewrite reason, got %v", found.FlagReasons)
+	}
+}
+
+func TestListFlagged_HighFailureRate(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+
+	id, _ := s.Create(ctx, &corestore.KnowledgeEntry{Title: "High Failure"})
+
+	// 1 success + 3 failure → failure rate = 75% > 50%
+	s.AddComment(ctx, &corestore.Comment{
+		KnowledgeID: id, Type: corestore.CommentTypeSuccess,
+		Content: "worked", Reasoning: "ok",
+	})
+	for i := 0; i < 3; i++ {
+		s.AddComment(ctx, &corestore.Comment{
+			KnowledgeID: id, Type: corestore.CommentTypeFailure,
+			Content: "fail", Reasoning: "broken",
+		})
+	}
+
+	flagged, err := s.ListFlagged(ctx)
+	if err != nil {
+		t.Fatalf("ListFlagged: %v", err)
+	}
+
+	var found *corestore.FlaggedEntry
+	for _, f := range flagged {
+		if f.Entry.ID == id {
+			found = f
+			break
+		}
+	}
+	if found == nil {
+		t.Fatal("expected flagged entry for high_failure_rate")
+	}
+	hasReason := false
+	for _, r := range found.FlagReasons {
+		if r == "high_failure_rate" {
+			hasReason = true
+		}
+	}
+	if !hasReason {
+		t.Errorf("expected high_failure_rate reason, got %v", found.FlagReasons)
+	}
+}
+
+// ---- FindSimilar ----
+
+func TestFindSimilar(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+
+	// A 和 B 共享 3/4 的 tag → Jaccard = 3/(4+4-3) = 3/5 = 60%，不超过 80%
+	s.Create(ctx, &corestore.KnowledgeEntry{
+		Title: "A", Tags: []string{"go", "concurrency", "goroutine", "channel"},
+	})
+	s.Create(ctx, &corestore.KnowledgeEntry{
+		Title: "B", Tags: []string{"go", "concurrency", "goroutine", "mutex"},
+	})
+	// C 和 D 高度重叠：3/3 = 100% > 80%
+	idC, _ := s.Create(ctx, &corestore.KnowledgeEntry{
+		Title: "C", Tags: []string{"python", "async", "await"},
+	})
+	idD, _ := s.Create(ctx, &corestore.KnowledgeEntry{
+		Title: "D", Tags: []string{"python", "async", "await"},
+	})
+
+	pairs, err := s.FindSimilar(ctx)
+	if err != nil {
+		t.Fatalf("FindSimilar: %v", err)
+	}
+
+	// 应该找到 C-D 对（100% overlap）
+	found := false
+	for _, p := range pairs {
+		aID, bID := p.EntryA.ID, p.EntryB.ID
+		if (aID == idC && bID == idD) || (aID == idD && bID == idC) {
+			found = true
+			if p.Overlap <= 0.8 {
+				t.Errorf("C-D overlap should be > 0.8, got %f", p.Overlap)
+			}
+		}
+	}
+	if !found {
+		t.Errorf("expected C-D pair in similar results, got %d pairs", len(pairs))
+	}
+}
+
+// ---- GetTagHealth enhanced ----
+
+func TestGetTagHealth_Substring(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+
+	// "go" 是 "golang" 的子串
+	s.Create(ctx, &corestore.KnowledgeEntry{Title: "A", Tags: []string{"go"}})
+	s.Create(ctx, &corestore.KnowledgeEntry{Title: "B", Tags: []string{"golang"}})
+
+	report, err := s.GetTagHealth(ctx)
+	if err != nil {
+		t.Fatalf("GetTagHealth: %v", err)
+	}
+
+	found := false
+	for _, p := range report.SynonymPairs {
+		names := []string{p.TagA.Name, p.TagB.Name}
+		hasGo, hasGolang := false, false
+		for _, n := range names {
+			if n == "go" {
+				hasGo = true
+			}
+			if n == "golang" {
+				hasGolang = true
+			}
+		}
+		if hasGo && hasGolang {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("expected 'go'/'golang' synonym pair via substring detection")
+	}
+}
+
+func TestGetTagHealth_CoOccurrence(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+
+	// "typescript" 和 "ts" 总是同时出现 → Jaccard = 1.0 > 0.8
+	for i := 0; i < 3; i++ {
+		s.Create(ctx, &corestore.KnowledgeEntry{
+			Title: fmt.Sprintf("Entry%d", i),
+			Tags:  []string{"typescript", "ts"},
+		})
+	}
+
+	report, err := s.GetTagHealth(ctx)
+	if err != nil {
+		t.Fatalf("GetTagHealth: %v", err)
+	}
+
+	found := false
+	for _, p := range report.SynonymPairs {
+		names := []string{p.TagA.Name, p.TagB.Name}
+		hasTS, hasFull := false, false
+		for _, n := range names {
+			if n == "ts" {
+				hasTS = true
+			}
+			if n == "typescript" {
+				hasFull = true
+			}
+		}
+		if hasTS && hasFull {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("expected 'typescript'/'ts' synonym pair via co-occurrence detection")
+	}
+}
+
+// ---- BrowseFacets large result ----
+
+func TestBrowseFacets_LargeResult(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+
+	// 创建 12 条共享 "go" tag 的知识 → > 10 条，返回 NextTags 而非 Entries
+	for i := 0; i < 12; i++ {
+		s.Create(ctx, &corestore.KnowledgeEntry{
+			Title: fmt.Sprintf("Go Entry %d", i),
+			Tags:  []string{"go", fmt.Sprintf("sub%d", i)},
+		})
+	}
+
+	result, err := s.BrowseFacets(ctx, []string{"go"})
+	if err != nil {
+		t.Fatalf("BrowseFacets: %v", err)
+	}
+	if result.TotalHits != 12 {
+		t.Errorf("total hits: got %d want 12", result.TotalHits)
+	}
+	if len(result.Entries) != 0 {
+		t.Errorf("expected no entries (>10 results), got %d", len(result.Entries))
+	}
+	if len(result.NextTags) == 0 {
+		t.Error("expected NextTags for large result set")
 	}
 }

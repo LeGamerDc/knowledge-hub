@@ -2,7 +2,7 @@
 
 ## 当前阶段
 
-Stage 3: 存储引擎 — 检索与算法层（待开始）
+Stage 4: Service 层 + API Server（待开始）
 
 ## 阶段规划
 
@@ -12,7 +12,7 @@ Stage 3: 存储引擎 — 检索与算法层（待开始）
 |-------|------|------|-----------|
 | 1 | 项目初始化 + OpenAPI + 代码生成 | `done` | go.mod, openapi.yaml, 生成代码, Makefile |
 | 2 | 存储引擎 — Schema + 基础 CRUD | `done` | pkg/corestore 全部 CRUD + 单元测试 |
-| 3 | 存储引擎 — 检索与算法层 | `pending` | Search, BrowseFacets, Weight, Flagging, Similar, TagHealth |
+| 3 | 存储引擎 — 检索与算法层 | `done` | Search, BrowseFacets, Weight, Flagging, Similar, TagHealth |
 | 4 | Service 层 + API Server | `pending` | internal/server/, cmd/kh-server, API 集成测试 |
 | 5 | MCP Shim | `pending` | cmd/mcp-shim, 18 个 MCP Tool, 端到端链路 |
 | 6 | CLI 工具 | `pending` | cmd/kh, 8 个命令 |
@@ -55,6 +55,12 @@ Stage 1 (项目骨架)
   - system.go：SystemStore（GetStatus/RecalculateWeights 指数衰减权重计算）
   - store_test.go：21 个单元测试全部通过（:memory: SQLite）
   - 关键 Bug 修复：scanEntries 嵌套查询死锁（先收集行再批量加载 tags）
+- [2026-03-01] Stage 3 完成：存储引擎算法层
+  - ListFlagged 重构为多条件检测（needs_rewrite / stale_access / has_unprocessed_comments / high_failure_rate / failure_eviction）
+  - FlaggedEntry 增加 FlagReasons []string 字段
+  - GetTagHealth 增加子串检测、Jaccard 共现率 >80% 检测、别名映射匹配，并更新频率阈值（LowFreq: <3, HighFreq: >30%）
+  - 新增 6 个集成测试：TestListFlagged_{FailureEviction,NeedsRewrite,HighFailureRate}、TestFindSimilar、TestGetTagHealth_{Substring,CoOccurrence}、TestBrowseFacets_LargeResult
+  - 全量 26 个测试通过
 - [2026-03-01] 初始化开发计划，拆分为 7 个阶段
   - 将原 engineering-design.md 的 5 Phase 细化为 7 Stage
   - 主要变化：原 Phase 1（基础框架 + HTTP API）拆为 Stage 1-4，按关注点分离
