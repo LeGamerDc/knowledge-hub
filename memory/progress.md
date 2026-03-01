@@ -2,7 +2,7 @@
 
 ## 当前阶段
 
-Stage 2: 存储引擎 — Schema + 基础 CRUD（待开始）
+Stage 3: 存储引擎 — 检索与算法层（待开始）
 
 ## 阶段规划
 
@@ -11,7 +11,7 @@ Stage 2: 存储引擎 — Schema + 基础 CRUD（待开始）
 | Stage | 名称 | 状态 | 核心交付物 |
 |-------|------|------|-----------|
 | 1 | 项目初始化 + OpenAPI + 代码生成 | `done` | go.mod, openapi.yaml, 生成代码, Makefile |
-| 2 | 存储引擎 — Schema + 基础 CRUD | `pending` | pkg/corestore 全部 CRUD + 单元测试 |
+| 2 | 存储引擎 — Schema + 基础 CRUD | `done` | pkg/corestore 全部 CRUD + 单元测试 |
 | 3 | 存储引擎 — 检索与算法层 | `pending` | Search, BrowseFacets, Weight, Flagging, Similar, TagHealth |
 | 4 | Service 层 + API Server | `pending` | internal/server/, cmd/kh-server, API 集成测试 |
 | 5 | MCP Shim | `pending` | cmd/mcp-shim, 18 个 MCP Tool, 端到端链路 |
@@ -44,6 +44,17 @@ Stage 1 (项目骨架)
   - oapi-codegen 生成 ServerInterface (26 methods) + 强类型 Client
   - StubService (501) + cmd/kh-server/main.go + Makefile
   - go build / go vet 全通过
+- [2026-03-01] Stage 2 完成：pkg/corestore 存储引擎 CRUD
+  - store.go + migrate.go：SQLite WAL 连接管理 + 6 张表 Schema
+  - models.go：全部 Go 结构体 + 枚举常量
+  - knowledge.go：KnowledgeStore（Create/GetByID/Update/Append/Archive/Restore/HardDelete/Search/BrowseFacets/FindSimilar/ListFlagged）
+  - comment.go：CommentStore（AddComment/GetByKnowledgeID/GetUnprocessed/MarkProcessed）
+  - tag.go：TagStore（GetTagHealth/MergeTags），Levenshtein 同义 Tag 检测
+  - curation.go：CurationStore（LogCuration/ListCurationLogs）
+  - conflict.go：ConflictStore（CreateConflict/ListConflicts/ResolveConflict）
+  - system.go：SystemStore（GetStatus/RecalculateWeights 指数衰减权重计算）
+  - store_test.go：21 个单元测试全部通过（:memory: SQLite）
+  - 关键 Bug 修复：scanEntries 嵌套查询死锁（先收集行再批量加载 tags）
 - [2026-03-01] 初始化开发计划，拆分为 7 个阶段
   - 将原 engineering-design.md 的 5 Phase 细化为 7 Stage
   - 主要变化：原 Phase 1（基础框架 + HTTP API）拆为 Stage 1-4，按关注点分离
