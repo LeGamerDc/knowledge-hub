@@ -2,7 +2,7 @@
 
 ## 当前阶段
 
-Stage 6: CLI 工具（待开始）
+Stage 7: Agent 集成 + 端到端验收（待开始）
 
 ## 阶段规划
 
@@ -15,7 +15,7 @@ Stage 6: CLI 工具（待开始）
 | 3 | 存储引擎 — 检索与算法层 | `done` | Search, BrowseFacets, Weight, Flagging, Similar, TagHealth |
 | 4 | Service 层 + API Server | `done` | internal/server/, cmd/kh-server, API 集成测试 |
 | 5 | MCP Shim | `done` | cmd/mcp-shim, 18 个 MCP Tool, 端到端链路 |
-| 6 | CLI 工具 | `pending` | cmd/kh, 8 个命令 |
+| 6 | CLI 工具 | `done` | cmd/kh, 8 个命令 |
 | 7 | Agent 集成 + 端到端验收 | `pending` | Rules, Skills, MCP 配置, 5 个验收场景 |
 
 ## 依赖关系
@@ -78,6 +78,13 @@ Stage 1 (项目骨架)
   - 12 个管理 Agent Tool（list_flagged/tag_health/find_similar/get_review/update_knowledge/archive/mark_processed/merge_tags/merge_knowledge/create_conflict/log_curation/recalculate_weights）
   - 依赖：github.com/modelcontextprotocol/go-sdk v1.4.0，StdioTransport
   - 端到端测试通过：MCP Tool Call → HTTP → SQLite → 响应 完整链路验证
+- [2026-03-01] Stage 6 完成：CLI 工具 kh
+  - cmd/kh/main.go: 8 个命令（status/list/read/restore/delete/conflicts/resolve/logs）
+  - 标准库 flag 解析，`--server` 全局 flag 或 $KH_SERVER 环境变量
+  - 列表输出 tabwriter 表格（ID 前 8 位）；read 输出 Markdown；错误写 stderr
+  - delete 需二次确认（y/N），先 GET 显示标题
+  - cmd/kh/main_test.go: 11 个集成测试，build binary + exec 验证各命令行为
+  - 修复：globalFS.Parse 整个 os.Args 而非手动扫描 leading flags
 - [2026-03-01] 初始化开发计划，拆分为 7 个阶段
   - 将原 engineering-design.md 的 5 Phase 细化为 7 Stage
   - 主要变化：原 Phase 1（基础框架 + HTTP API）拆为 Stage 1-4，按关注点分离
