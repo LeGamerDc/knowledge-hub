@@ -1,0 +1,1207 @@
+openapi: "3.0.3"
+info:
+  title: Knowledge Hub API
+  description: Agent knowledge sharing platform - API Server
+  version: "0.1.0"
+
+servers:
+  - url: http://localhost:18080
+    description: Local development server
+
+paths:
+  # ============================================================
+  # Agent Domain (6 endpoints)
+  # ============================================================
+  /api/v1/agent/browse:
+    post:
+      operationId: agentBrowse
+      tags: [agent]
+      summary: Faceted browsing - drill down by tags
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BrowseRequest"
+      responses:
+        "200":
+          description: Tag facets or matching entries
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BrowseResponse"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/v1/agent/search:
+    post:
+      operationId: agentSearch
+      tags: [agent]
+      summary: Search knowledge by tags and keyword
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SearchRequest"
+      responses:
+        "200":
+          description: Search results sorted by weight
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/SearchResult"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/v1/agent/knowledge/{id}:
+    get:
+      operationId: agentReadKnowledge
+      tags: [agent]
+      summary: Read full knowledge entry (updates access stats)
+      parameters:
+        - $ref: "#/components/parameters/KnowledgeID"
+      responses:
+        "200":
+          description: Full knowledge detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/KnowledgeDetail"
+        "404":
+          $ref: "#/components/responses/Error"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/v1/agent/knowledge:
+    post:
+      operationId: agentContribute
+      tags: [agent]
+      summary: Contribute new knowledge
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ContributeRequest"
+      responses:
+        "201":
+          description: Knowledge created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ContributeResponse"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/v1/agent/knowledge/{id}/append:
+    post:
+      operationId: agentAppendKnowledge
+      tags: [agent]
+      summary: Append content to knowledge entry
+      parameters:
+        - $ref: "#/components/parameters/KnowledgeID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AppendRequest"
+      responses:
+        "200":
+          description: Content appended
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AppendResponse"
+        "404":
+          $ref: "#/components/responses/Error"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/v1/agent/knowledge/{id}/comments:
+    post:
+      operationId: agentComment
+      tags: [agent]
+      summary: Add a comment to knowledge entry
+      parameters:
+        - $ref: "#/components/parameters/KnowledgeID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CommentRequest"
+      responses:
+        "201":
+          description: Comment created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CommentResponse"
+        "404":
+          $ref: "#/components/responses/Error"
+        default:
+          $ref: "#/components/responses/Error"
+
+  # ============================================================
+  # Admin Domain (11 endpoints)
+  # ============================================================
+  /api/v1/admin/flagged:
+    get:
+      operationId: adminListFlagged
+      tags: [admin]
+      summary: List knowledge entries needing review
+      responses:
+        "200":
+          description: Flagged entries
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/FlaggedEntry"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/v1/admin/tags/health:
+    get:
+      operationId: adminTagHealth
+      tags: [admin]
+      summary: Tag health report (synonyms, low/high frequency)
+      responses:
+        "200":
+          description: Tag health report
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TagHealthReport"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/v1/admin/knowledge/similar:
+    get:
+      operationId: adminFindSimilar
+      tags: [admin]
+      summary: Find similar knowledge pairs by tag overlap
+      responses:
+        "200":
+          description: Similar knowledge pairs
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/SimilarPair"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/v1/admin/knowledge/{id}/review:
+    get:
+      operationId: adminGetReview
+      tags: [admin]
+      summary: Get knowledge review details with unprocessed comments
+      parameters:
+        - $ref: "#/components/parameters/KnowledgeID"
+      responses:
+        "200":
+          description: Review data
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReviewData"
+        "404":
+          $ref: "#/components/responses/Error"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/v1/admin/knowledge/{id}:
+    put:
+      operationId: adminUpdateKnowledge
+      tags: [admin]
+      summary: Full update of knowledge entry (admin rewrite)
+      parameters:
+        - $ref: "#/components/parameters/KnowledgeID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateKnowledgeRequest"
+      responses:
+        "200":
+          description: Knowledge updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UpdateResponse"
+        "404":
+          $ref: "#/components/responses/Error"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/v1/admin/knowledge/{id}/archive:
+    post:
+      operationId: adminArchive
+      tags: [admin]
+      summary: Archive knowledge entry (soft delete)
+      parameters:
+        - $ref: "#/components/parameters/KnowledgeID"
+      responses:
+        "200":
+          description: Entry archived
+          content:
+            application/json:
+              schema:
+                type: object
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/v1/admin/comments/processed:
+    post:
+      operationId: adminMarkProcessed
+      tags: [admin]
+      summary: Batch mark comments as processed
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MarkProcessedRequest"
+      responses:
+        "200":
+          description: Comments marked as processed
+          content:
+            application/json:
+              schema:
+                type: object
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/v1/admin/tags/merge:
+    post:
+      operationId: adminMergeTags
+      tags: [admin]
+      summary: Merge source tags into target tag
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MergeTagsRequest"
+      responses:
+        "200":
+          description: Tags merged
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MergeTagsResponse"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/v1/admin/knowledge/merge:
+    post:
+      operationId: adminMergeKnowledge
+      tags: [admin]
+      summary: Merge knowledge entries
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MergeKnowledgeRequest"
+      responses:
+        "200":
+          description: Knowledge merged
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MergeKnowledgeResponse"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/v1/admin/conflicts:
+    post:
+      operationId: adminCreateConflict
+      tags: [admin]
+      summary: Create a conflict report
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateConflictRequest"
+      responses:
+        "201":
+          description: Conflict report created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CreateConflictResponse"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/v1/admin/curation-logs:
+    post:
+      operationId: adminLogCuration
+      tags: [admin]
+      summary: Write a curation log entry
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CurationLogRequest"
+      responses:
+        "201":
+          description: Curation log created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CurationLogResponse"
+        default:
+          $ref: "#/components/responses/Error"
+
+  # ============================================================
+  # System Domain (9 endpoints)
+  # ============================================================
+  /api/v1/system/recalculate-weights:
+    post:
+      operationId: systemRecalculateWeights
+      tags: [system]
+      summary: Batch recalculate all knowledge weights
+      responses:
+        "200":
+          description: Weights recalculated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RecalculateResponse"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/v1/system/status:
+    get:
+      operationId: systemGetStatus
+      tags: [system]
+      summary: System status overview
+      responses:
+        "200":
+          description: System status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SystemStatus"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/v1/system/knowledge:
+    get:
+      operationId: systemListKnowledge
+      tags: [system]
+      summary: List knowledge entries with filters
+      parameters:
+        - name: status
+          in: query
+          schema:
+            $ref: "#/components/schemas/KnowledgeStatus"
+        - name: tag
+          in: query
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+      responses:
+        "200":
+          description: Knowledge entries list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/KnowledgeEntry"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/v1/system/knowledge/{id}:
+    get:
+      operationId: systemGetKnowledge
+      tags: [system]
+      summary: Read knowledge entry (no access stat update)
+      parameters:
+        - $ref: "#/components/parameters/KnowledgeID"
+      responses:
+        "200":
+          description: Knowledge entry
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/KnowledgeEntry"
+        "404":
+          $ref: "#/components/responses/Error"
+        default:
+          $ref: "#/components/responses/Error"
+    delete:
+      operationId: systemDeleteKnowledge
+      tags: [system]
+      summary: Hard delete knowledge entry (permanent)
+      parameters:
+        - $ref: "#/components/parameters/KnowledgeID"
+      responses:
+        "204":
+          description: Entry deleted
+        "404":
+          $ref: "#/components/responses/Error"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/v1/system/knowledge/{id}/restore:
+    post:
+      operationId: systemRestoreKnowledge
+      tags: [system]
+      summary: Restore archived knowledge entry
+      parameters:
+        - $ref: "#/components/parameters/KnowledgeID"
+      responses:
+        "200":
+          description: Entry restored
+          content:
+            application/json:
+              schema:
+                type: object
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/v1/system/conflicts:
+    get:
+      operationId: systemListConflicts
+      tags: [system]
+      summary: List conflict reports
+      parameters:
+        - name: status
+          in: query
+          schema:
+            $ref: "#/components/schemas/ConflictStatus"
+      responses:
+        "200":
+          description: Conflict reports
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ConflictReport"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/v1/system/conflicts/{id}/resolve:
+    post:
+      operationId: systemResolveConflict
+      tags: [system]
+      summary: Resolve a conflict report
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ResolveConflictRequest"
+      responses:
+        "200":
+          description: Conflict resolved
+          content:
+            application/json:
+              schema:
+                type: object
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/v1/system/curation-logs:
+    get:
+      operationId: systemListCurationLogs
+      tags: [system]
+      summary: List curation logs
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+      responses:
+        "200":
+          description: Curation logs
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/CurationLog"
+        default:
+          $ref: "#/components/responses/Error"
+
+# ============================================================
+# Components
+# ============================================================
+components:
+  parameters:
+    KnowledgeID:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+
+  responses:
+    Error:
+      description: Error response
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+
+  schemas:
+    # ----------------------------------------------------------
+    # Enums (API uses strings, DB uses integers)
+    # ----------------------------------------------------------
+    CommentType:
+      type: string
+      enum: [success, failure, supplement, correction]
+
+    CurationAction:
+      type: string
+      enum:
+        - merge_supplement
+        - apply_correction
+        - downgrade
+        - archive
+        - merge_tags
+        - merge_knowledge
+        - create_conflict
+
+    KnowledgeStatus:
+      type: string
+      enum: [active, archived]
+
+    ConflictStatus:
+      type: string
+      enum: [open, resolved]
+
+    ConflictType:
+      type: string
+      enum: [correction_conflict, knowledge_conflict]
+
+    AppendType:
+      type: string
+      enum: [supplement, correction]
+
+    # ----------------------------------------------------------
+    # Core Entities
+    # ----------------------------------------------------------
+    KnowledgeEntry:
+      type: object
+      required: [id, title, status, created_at, updated_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        summary:
+          type: string
+        body:
+          type: string
+        tags:
+          type: array
+          items:
+            type: string
+        author:
+          type: string
+        weight:
+          type: number
+          format: double
+        status:
+          $ref: "#/components/schemas/KnowledgeStatus"
+        access_count:
+          type: integer
+        append_count:
+          type: integer
+        needs_rewrite:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        accessed_at:
+          type: string
+          format: date-time
+
+    Comment:
+      type: object
+      required: [id, knowledge_id, type, content, reasoning, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        knowledge_id:
+          type: string
+          format: uuid
+        type:
+          $ref: "#/components/schemas/CommentType"
+        content:
+          type: string
+        reasoning:
+          type: string
+        scenario:
+          type: string
+        author:
+          type: string
+        processed:
+          type: boolean
+        processed_at:
+          type: string
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+
+    Tag:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+        count:
+          type: integer
+          description: Number of knowledge entries with this tag
+
+    CurationLog:
+      type: object
+      required: [id, action, target_id, description, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        action:
+          $ref: "#/components/schemas/CurationAction"
+        target_id:
+          type: string
+        source_ids:
+          type: array
+          items:
+            type: string
+        description:
+          type: string
+        diff:
+          type: string
+        agent_id:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+
+    ConflictReport:
+      type: object
+      required: [id, type, description, status, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        type:
+          $ref: "#/components/schemas/ConflictType"
+        knowledge_ids:
+          type: array
+          items:
+            type: string
+        comment_ids:
+          type: array
+          items:
+            type: string
+        description:
+          type: string
+        status:
+          $ref: "#/components/schemas/ConflictStatus"
+        resolution:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        resolved_at:
+          type: string
+          format: date-time
+
+    # ----------------------------------------------------------
+    # Agent Domain - Request/Response
+    # ----------------------------------------------------------
+    BrowseRequest:
+      type: object
+      properties:
+        selected_tags:
+          type: array
+          items:
+            type: string
+
+    BrowseResponse:
+      type: object
+      required: [tags, total_matches]
+      properties:
+        tags:
+          type: array
+          items:
+            $ref: "#/components/schemas/Tag"
+        total_matches:
+          type: integer
+
+    SearchRequest:
+      type: object
+      properties:
+        tags:
+          type: array
+          items:
+            type: string
+        keyword:
+          type: string
+
+    SearchResult:
+      type: object
+      required: [id, title]
+      properties:
+        id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        summary:
+          type: string
+        tags:
+          type: array
+          items:
+            type: string
+        weight:
+          type: number
+          format: double
+
+    CommentsSummary:
+      type: object
+      properties:
+        success:
+          type: integer
+        failure:
+          type: integer
+        supplement:
+          type: integer
+        correction:
+          type: integer
+
+    KnowledgeDetail:
+      type: object
+      required: [id, title, created_at, updated_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        summary:
+          type: string
+        body:
+          type: string
+        tags:
+          type: array
+          items:
+            type: string
+        weight:
+          type: number
+          format: double
+        author:
+          type: string
+        comments_summary:
+          $ref: "#/components/schemas/CommentsSummary"
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    ContributeRequest:
+      type: object
+      required: [title, summary, body, tags]
+      properties:
+        title:
+          type: string
+        summary:
+          type: string
+        body:
+          type: string
+        tags:
+          type: array
+          items:
+            type: string
+          minItems: 1
+        author:
+          type: string
+
+    ContributeResponse:
+      type: object
+      required: [id]
+      properties:
+        id:
+          type: string
+          format: uuid
+
+    AppendRequest:
+      type: object
+      required: [type, content]
+      properties:
+        type:
+          $ref: "#/components/schemas/AppendType"
+        content:
+          type: string
+
+    AppendResponse:
+      type: object
+      required: [id, append_count]
+      properties:
+        id:
+          type: string
+          format: uuid
+        append_count:
+          type: integer
+
+    CommentRequest:
+      type: object
+      required: [type, content, reasoning]
+      properties:
+        type:
+          $ref: "#/components/schemas/CommentType"
+        content:
+          type: string
+        reasoning:
+          type: string
+        scenario:
+          type: string
+        author:
+          type: string
+
+    CommentResponse:
+      type: object
+      required: [id]
+      properties:
+        id:
+          type: string
+          format: uuid
+
+    # ----------------------------------------------------------
+    # Admin Domain - Request/Response
+    # ----------------------------------------------------------
+    CommentStats:
+      type: object
+      properties:
+        total:
+          type: integer
+        unprocessed:
+          type: integer
+        failure:
+          type: integer
+
+    FlaggedEntry:
+      type: object
+      required: [id, title, flag_reasons]
+      properties:
+        id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        flag_reasons:
+          type: array
+          items:
+            type: string
+        comment_stats:
+          $ref: "#/components/schemas/CommentStats"
+        weight:
+          type: number
+          format: double
+        needs_rewrite:
+          type: boolean
+
+    SimilarTagPair:
+      type: object
+      required: [tags, reason]
+      properties:
+        tags:
+          type: array
+          items:
+            type: string
+          minItems: 2
+          maxItems: 2
+        reason:
+          type: string
+
+    LowFreqTag:
+      type: object
+      required: [name, frequency]
+      properties:
+        name:
+          type: string
+        frequency:
+          type: integer
+
+    HighFreqTag:
+      type: object
+      required: [name, frequency, share]
+      properties:
+        name:
+          type: string
+        frequency:
+          type: integer
+        share:
+          type: number
+          format: double
+
+    TagHealthReport:
+      type: object
+      properties:
+        similar_pairs:
+          type: array
+          items:
+            $ref: "#/components/schemas/SimilarTagPair"
+        low_freq:
+          type: array
+          items:
+            $ref: "#/components/schemas/LowFreqTag"
+        high_freq:
+          type: array
+          items:
+            $ref: "#/components/schemas/HighFreqTag"
+
+    SimilarPair:
+      type: object
+      required: [id_a, title_a, id_b, title_b, overlap_tags, overlap_ratio]
+      properties:
+        id_a:
+          type: string
+          format: uuid
+        title_a:
+          type: string
+        id_b:
+          type: string
+          format: uuid
+        title_b:
+          type: string
+        overlap_tags:
+          type: array
+          items:
+            type: string
+        overlap_ratio:
+          type: number
+          format: double
+
+    ReviewData:
+      type: object
+      required: [knowledge, unprocessed_comments]
+      properties:
+        knowledge:
+          $ref: "#/components/schemas/KnowledgeEntry"
+        unprocessed_comments:
+          type: array
+          items:
+            $ref: "#/components/schemas/Comment"
+
+    UpdateKnowledgeRequest:
+      type: object
+      required: [title, summary, body, tags]
+      properties:
+        title:
+          type: string
+        summary:
+          type: string
+        body:
+          type: string
+        tags:
+          type: array
+          items:
+            type: string
+
+    UpdateResponse:
+      type: object
+      required: [updated_at]
+      properties:
+        updated_at:
+          type: string
+          format: date-time
+
+    MarkProcessedRequest:
+      type: object
+      required: [comment_ids]
+      properties:
+        comment_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+          minItems: 1
+
+    MergeTagsRequest:
+      type: object
+      required: [target, sources]
+      properties:
+        target:
+          type: string
+        sources:
+          type: array
+          items:
+            type: string
+          minItems: 1
+
+    MergeTagsResponse:
+      type: object
+      required: [affected_knowledge_count]
+      properties:
+        affected_knowledge_count:
+          type: integer
+
+    MergeKnowledgeRequest:
+      type: object
+      required: [target_id, source_ids, merged_body, merged_summary]
+      properties:
+        target_id:
+          type: string
+          format: uuid
+        source_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+          minItems: 1
+        merged_body:
+          type: string
+        merged_summary:
+          type: string
+
+    MergeKnowledgeResponse:
+      type: object
+      required: [id]
+      properties:
+        id:
+          type: string
+          format: uuid
+
+    CreateConflictRequest:
+      type: object
+      required: [type, knowledge_ids, description]
+      properties:
+        type:
+          $ref: "#/components/schemas/ConflictType"
+        knowledge_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+          minItems: 1
+        comment_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+        description:
+          type: string
+
+    CreateConflictResponse:
+      type: object
+      required: [id]
+      properties:
+        id:
+          type: string
+          format: uuid
+
+    CurationLogRequest:
+      type: object
+      required: [action, target_id, description]
+      properties:
+        action:
+          $ref: "#/components/schemas/CurationAction"
+        target_id:
+          type: string
+        source_ids:
+          type: array
+          items:
+            type: string
+        description:
+          type: string
+        diff:
+          type: string
+
+    CurationLogResponse:
+      type: object
+      required: [id]
+      properties:
+        id:
+          type: string
+          format: uuid
+
+    # ----------------------------------------------------------
+    # System Domain - Request/Response
+    # ----------------------------------------------------------
+    SystemStatus:
+      type: object
+      properties:
+        total_knowledge:
+          type: integer
+        active_knowledge:
+          type: integer
+        archived_knowledge:
+          type: integer
+        total_comments:
+          type: integer
+        unprocessed_comments:
+          type: integer
+        total_tags:
+          type: integer
+        open_conflicts:
+          type: integer
+
+    RecalculateResponse:
+      type: object
+      required: [updated_count]
+      properties:
+        updated_count:
+          type: integer
+
+    ResolveConflictRequest:
+      type: object
+      required: [resolution]
+      properties:
+        resolution:
+          type: string
+
+    # ----------------------------------------------------------
+    # Common
+    # ----------------------------------------------------------
+    ErrorResponse:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          type: integer
+        message:
+          type: string

@@ -1,0 +1,78 @@
+# Knowledge Hub - Agent 知识共享平台
+
+## 项目概述
+
+Go 项目。两个独立进程：MCP Shim（stdio，转发请求）+ Knowledge Hub API Server（HTTP/JSON，SQLite WAL）。
+OpenAPI 3.0 为 API 单一事实来源，oapi-codegen 生成 Server Handler（chi）+ 强类型 Client。
+
+前请先载入 `memory/progress.md` 了解当前项目进度
+
+## 文档索引
+
+| 文档 | 路径 | 内容 |
+|------|------|------|
+| 产品设计 | `docs/knowledge-hub.md` | 背景、目标、范围、验收标准 |
+| 工程设计 | `docs/engineering-design.md` | 架构、数据模型、API、Agent 集成流程、Rules/Skill 设计 |
+| 架构概览 | `docs/specs/architecture-overview.md` | 进程模型、分层结构 |
+| API 协议 | `docs/specs/api-protocol.md` | HTTP 端点详细定义 |
+| 存储引擎 | `docs/specs/storage-engine.md` | SQLite schema、索引、查询模式 |
+| Agent 工作流 | `docs/specs/agent-workflows.md` | 工作/整理 Agent 的交互流程 |
+| VFS/CLI | `docs/specs/vfs-cli.md` | 虚拟文件系统与命令行工具 |
+
+开发中按需读取相关文档，不要一次性全部加载。
+
+## 项目结构（目标）
+
+```
+knowledge-hub/
+├── api/openapi.yaml           # OpenAPI 3.0 定义
+├── cmd/
+│   ├── kh-server/main.go      # API Server
+│   ├── mcp-shim/main.go       # MCP Shim
+│   └── kh/main.go             # CLI 工具
+├── pkg/
+│   ├── corestore/             # 存储引擎（SQLite）
+│   └── khclient/              # 生成的 HTTP Client
+├── internal/server/
+│   ├── handlers/              # 生成的 HTTP Handler
+│   └── service/               # 业务逻辑
+├── rules/knowledge-hub.md     # CLAUDE.md Rules
+├── skills/                    # Skill 定义
+├── docs/                      # 设计文档
+└── memory/                    # 开发记录
+```
+
+## 关键依赖
+
+- `github.com/modelcontextprotocol/go-sdk` — MCP Go SDK
+- `github.com/oapi-codegen/oapi-codegen` — OpenAPI 代码生成
+- `github.com/go-chi/chi/v5` — HTTP Router
+- `modernc.org/sqlite` — 纯 Go SQLite（无 CGO）
+- `github.com/google/uuid` — UUID
+- `github.com/agnivade/levenshtein` — 编辑距离
+
+## 开发规范
+
+- 技术决策、遇到的问题、解决方案记录到 `memory/` 目录（见下方结构）
+- 优先使用 subagent 隔离独立子任务（如：文件搜索、代码探索、测试运行）
+- 边界封闭的纯计算/算法任务使用 `/codex` skill 委派
+- 代码生成流程：修改 `api/openapi.yaml` → 运行 oapi-codegen → 实现 handler
+- SQLite 使用 WAL 模式，modernc.org/sqlite 纯 Go 驱动
+- 错误处理：API 层统一 JSON 错误响应，内部用 Go error wrapping
+
+## memory/ 目录结构
+
+```
+memory/
+├── decisions.md       # 技术决策记录（选型、架构取舍、方案变更）
+├── issues.md          # 遇到的问题与解决方案
+├── progress.md        # 开发进度与阶段状态
+├── scratchpad.md      # Agent 工作笔记（reflect 用）
+├── stages/            # 各个阶段需要执行的任务
+```
+
+写入规则：
+- 每条记录带日期前缀 `[YYYY-MM-DD]`
+- decisions.md：记录 what + why + alternatives considered
+- issues.md：记录 problem + root cause + solution
+- 避免重复记录，先检查再写入

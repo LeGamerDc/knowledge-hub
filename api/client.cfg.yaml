@@ -1,0 +1,5 @@
+package: khclient
+generate:
+  client: true
+  models: true
+output: pkg/khclient/client.gen.go
