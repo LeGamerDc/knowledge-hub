@@ -540,8 +540,9 @@ func TestBrowseFacets_SmallResult(t *testing.T) {
 	if result.TotalHits != 2 {
 		t.Errorf("total hits: got %d want 2", result.TotalHits)
 	}
-	if len(result.Entries) != 2 {
-		t.Errorf("entries: got %d want 2", len(result.Entries))
+	// 始终返回 NextTags（由 Agent 决定何时切换到 kh_search）
+	if len(result.NextTags) == 0 {
+		t.Errorf("expected NextTags to be non-empty for 2 matching entries")
 	}
 }
 

@@ -261,16 +261,7 @@ func (s *store) BrowseFacets(ctx context.Context, selectedTags []string) (*Facet
 		return result, nil
 	}
 
-	if len(entryIDs) <= 10 {
-		entries, err := s.fetchEntriesByIDs(ctx, entryIDs)
-		if err != nil {
-			return nil, err
-		}
-		result.Entries = entries
-		return result, nil
-	}
-
-	// 聚合其他 Tag
+	// 聚合其他 Tag（始终返回，由 Agent 决定何时切换到 kh_search）
 	placeholders := strings.Repeat("?,", len(entryIDs))
 	placeholders = placeholders[:len(placeholders)-1]
 	selectedPlaceholders := ""

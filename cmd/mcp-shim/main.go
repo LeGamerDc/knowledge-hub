@@ -28,12 +28,29 @@ func main() {
 		log.Fatalf("failed to create API client: %v", err)
 	}
 
+	mode := os.Getenv("KH_MODE")
+
+	name := "knowledge-hub"
+	if mode == "worker" {
+		name = "knowledge-hub-worker"
+	} else if mode == "admin" {
+		name = "knowledge-hub-admin"
+	}
+
 	s := mcp.NewServer(&mcp.Implementation{
-		Name:    "knowledge-hub",
+		Name:    name,
 		Version: "1.0.0",
 	}, nil)
 
-	registerTools(s, client)
+	switch mode {
+	case "worker":
+		registerWorkerTools(s, client)
+	case "admin":
+		registerAdminTools(s, client)
+	default:
+		registerWorkerTools(s, client)
+		registerAdminTools(s, client)
+	}
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
@@ -74,8 +91,7 @@ func errResult(err error) (*mcp.CallToolResult, error) {
 	}, nil
 }
 
-func registerTools(s *mcp.Server, c *khclient.Client) {
-	// ── Working Agent Tools ──────────────────────────────────────────────────
+func registerWorkerTools(s *mcp.Server, c *khclient.Client) {
 
 	// kh_browse: Faceted tag browsing. Returns matching tags + total_matches.
 	s.AddTool(&mcp.Tool{
@@ -330,8 +346,9 @@ func registerTools(s *mcp.Server, c *khclient.Client) {
 		return textResult(result)
 	})
 
-	// ── Curation Agent Tools ─────────────────────────────────────────────────
+}
 
+func registerAdminTools(s *mcp.Server, c *khclient.Client) {
 	// kh_list_flagged: List entries that need curation attention.
 	s.AddTool(&mcp.Tool{
 		Name:        "kh_list_flagged",

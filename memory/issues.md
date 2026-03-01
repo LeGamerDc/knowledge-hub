@@ -5,6 +5,14 @@
 <!-- Root Cause: 根因 -->
 <!-- Solution: 怎么解决的 -->
 
+## [2026-03-01] BrowseFacets 小数据集返回空 tags
+
+**Problem**: `kh_browse` 在知识库条目 ≤ 10 时返回空 tags 数组，即使确实存在标签数据。
+
+**Root Cause**: `BrowseFacets` 实现中，当 `len(entryIDs) <= 10` 时走了一个短路分支，直接返回 `Entries`（原始条目列表）而不计算 `NextTags`。但 Service 层只读 `NextTags`，导致 `Tags` 为空。这与 API 设计矛盾——设计中"何时切换到 kh_search"应由 Agent 决定，Server 始终应返回 tags。
+
+**Solution**: 移除 `<= 10` 的短路分支，`BrowseFacets` 始终计算并返回 `NextTags`。更新相关测试以验证 `NextTags` 而非 `Entries`。
+
 ## [2026-03-01] corestore.Search 按 Tag 过滤时返回空结果
 
 **Problem**: `AgentSearch` 传入 tags 参数时，搜索结果为空，即使数据库中存在匹配条目。

@@ -2,7 +2,7 @@
 
 ## 当前阶段
 
-Stage 7: Agent 集成 + 端到端验收（待开始）
+**全部 7 个阶段完成** ✓
 
 ## 阶段规划
 
@@ -16,7 +16,7 @@ Stage 7: Agent 集成 + 端到端验收（待开始）
 | 4 | Service 层 + API Server | `done` | internal/server/, cmd/kh-server, API 集成测试 |
 | 5 | MCP Shim | `done` | cmd/mcp-shim, 18 个 MCP Tool, 端到端链路 |
 | 6 | CLI 工具 | `done` | cmd/kh, 8 个命令 |
-| 7 | Agent 集成 + 端到端验收 | `pending` | Rules, Skills, MCP 配置, 5 个验收场景 |
+| 7 | Agent 集成 + 端到端验收 | `done` | Rules, Skills, MCP 配置, 5 个验收场景 |
 
 ## 依赖关系
 
@@ -85,6 +85,15 @@ Stage 1 (项目骨架)
   - delete 需二次确认（y/N），先 GET 显示标题
   - cmd/kh/main_test.go: 11 个集成测试，build binary + exec 验证各命令行为
   - 修复：globalFS.Parse 整个 os.Args 而非手动扫描 leading flags
+- [2026-03-01] Stage 7 完成：Agent 集成 + 端到端验收
+  - rules/knowledge-hub.md：工作 Agent Rule（意识植入）
+  - skills/：4 个 Skill 文件（search-knowledge / contribute-knowledge / reflect / admin-inspect）
+  - .claude/commands/：Skill 文件同步到 Claude Code 自定义命令目录
+  - cmd/mcp-shim：添加 KH_MODE=worker|admin 环境变量支持，区分工具集
+  - docs/mcp-setup.md：MCP 配置与启动完整指南
+  - scripts/seed-knowledge.sh：5 条种子知识录入脚本
+  - bug 修复：BrowseFacets 始终返回 NextTags（不再因 entryIDs<=10 而短路返回 entries）
+  - 验收：browse/search/评论/权重重算/CLI 全部通过端到端测试
 - [2026-03-01] 初始化开发计划，拆分为 7 个阶段
   - 将原 engineering-design.md 的 5 Phase 细化为 7 Stage
   - 主要变化：原 Phase 1（基础框架 + HTTP API）拆为 Stage 1-4，按关注点分离
