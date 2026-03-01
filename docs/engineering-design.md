@@ -4,18 +4,24 @@
 
 基于 `docs/knowledge-hub.md` 的产品设计，我们需要将其转化为可落地的工程方案。核心挑战在于：当前 agent 能力不支持"模糊概念触发行为"，因此需要通过 CLAUDE.md Rules 来编排 agent 与 Knowledge Hub 的交互流程。本方案是 MVP（本地单用户），核心验证 tag 系统 + 评论系统 + agent 集成流程的可行性。
 
+### 设计变更记录
+
+| 变更 | 原方案 | 现方案 | 理由 |
+|------|-------|-------|------|
+| 进程间通信协议 | gRPC + Protobuf | OpenAPI 3.0 + HTTP/JSON | MVP 阶段优先调试友好性：HTTP 可直接 curl 调试；oapi-codegen 提供等价的强类型代码生成（Server Handler + Client）；省去 protoc + gRPC 插件工具链 |
+
 ---
 
 ## 1. 整体架构
 
 ```
-Claude Code Session 1 --spawn--> MCP Shim 1 --gRPC--+
-Claude Code Session 2 --spawn--> MCP Shim 2 --gRPC--+
-                                                     |
-                                                     v
+Claude Code Session 1 --spawn--> MCP Shim 1 --HTTP/JSON--+
+Claude Code Session 2 --spawn--> MCP Shim 2 --HTTP/JSON--+
+                                                          |
+                                                          v
                                   +--------------------------------+
                                   |  Knowledge Hub API Server      |
-                                  |  (long-running service)        |
+                                  |  (long-running HTTP service)   |
                                   |                                |
                                   |  +-------------------------+   |
                                   |  |  Service Layer          |   |
@@ -30,11 +36,11 @@ Claude Code Session 2 --spawn--> MCP Shim 2 --gRPC--+
 
 **两个独立进程：**
 
-- **MCP Shim**：轻量 stdio 进程，Claude Code 每个 session spawn 一个。职责仅为 MCP 协议解析 + gRPC 转发，不含业务逻辑。
-- **Knowledge Hub API Server**：长期运行的独立服务，通过 gRPC 暴露业务接口。管理 SQLite 存储，处理所有并发请求。
+- **MCP Shim**：轻量 stdio 进程，Claude Code 每个 session spawn 一个。职责仅为 MCP 协议解析 + HTTP 请求转发，不含业务逻辑。内部使用 OpenAPI 代码生成的强类型 HTTP Client。
+- **Knowledge Hub API Server**：长期运行的独立服务，通过 HTTP REST API 暴露业务接口（OpenAPI 3.0 定义）。管理 SQLite 存储，处理所有并发请求。
 
-**为什么用 gRPC：**
-两个独立进程之间需要网络通信。gRPC 提供强类型契约（proto）、高效序列化、代码生成，比手写 HTTP + JSON 更可靠。
+**为什么用 OpenAPI + HTTP：**
+两个独立进程之间需要网络通信。OpenAPI 3.0 作为 API 的单一事实来源，通过 `oapi-codegen` 自动生成 Server Handler 和强类型 Client，提供与 Protobuf 等价的类型安全保证。相比 gRPC，HTTP/JSON 对 curl/Bash 调试极为友好，且无需 protoc 工具链。
 
 **并发处理：**
 所有请求汇聚到单一 API Server 进程，由 Go 标准并发原语处理。SQLite 使用 WAL 模式，支持并发读 + 串行写，对 MVP 的负载量级绰绰有余。
@@ -466,85 +472,47 @@ Trigger Curation
 |------|------|------|------|
 | `kh_recalculate_weights` | 无 | {updated_count} | 批量重算所有知识权重 |
 
-### 5.4 gRPC Service 定义
+### 5.4 HTTP REST API 端点映射
 
-```protobuf
-syntax = "proto3";
-package knowledgehub.v1;
+API 协议以 OpenAPI 3.0 YAML 文件（`api/openapi.yaml`）为单一事实来源，通过 `oapi-codegen` 生成 Server Handler（chi router）和强类型 Client。
 
-service KnowledgeHub {
-  // ===== 工作 Agent 接口 =====
+以下为 MCP Tool 与 HTTP 端点的完整映射（详细请求/响应定义见 `docs/specs/api-protocol.md`）：
 
-  // 渐进式检索（Browse -> Search(含摘要) -> GetFull，3步完成）
-  rpc BrowseDirectory(BrowseDirectoryRequest) returns (BrowseDirectoryResponse);
-  rpc Search(SearchRequest) returns (SearchResponse);  // 返回含 summary 的结果列表
-  rpc GetFull(GetFullRequest) returns (GetFullResponse);
+**工作 Agent 接口（`/api/v1/agent/`）：**
 
-  // 知识贡献与追加
-  rpc Contribute(ContributeRequest) returns (ContributeResponse);
-  rpc AppendKnowledge(AppendKnowledgeRequest) returns (AppendKnowledgeResponse);
+| MCP Tool | HTTP Method | Path | 说明 |
+|----------|------------|------|------|
+| `kh_browse` | POST | `/agent/browse` | Faceted 浏览 |
+| `kh_search` | POST | `/agent/search` | 搜索（返回摘要） |
+| `kh_read_full` | GET | `/agent/knowledge/{id}` | 读取全文 |
+| `kh_contribute` | POST | `/agent/knowledge` | 贡献新知识 |
+| `kh_append_knowledge` | POST | `/agent/knowledge/{id}/append` | 追加内容 |
+| `kh_comment` | POST | `/agent/knowledge/{id}/comments` | 添加评论 |
 
-  // 评论
-  rpc AddComment(AddCommentRequest) returns (AddCommentResponse);
+**整理 Agent 接口（`/api/v1/admin/`）：**
 
-  // ===== 整理 Agent 接口 =====
+| MCP Tool | HTTP Method | Path | 说明 |
+|----------|------------|------|------|
+| `kh_list_flagged` | GET | `/admin/flagged` | 待审查列表 |
+| `kh_tag_health` | GET | `/admin/tags/health` | Tag 健康报告 |
+| `kh_find_similar` | GET | `/admin/knowledge/similar` | 疑似重复检测 |
+| `kh_get_review` | GET | `/admin/knowledge/{id}/review` | 审查详情 |
+| `kh_update_knowledge` | PUT | `/admin/knowledge/{id}` | 全量更新（重构用） |
+| `kh_archive` | POST | `/admin/knowledge/{id}/archive` | 归档（软删除） |
+| `kh_mark_processed` | POST | `/admin/comments/processed` | 标记评论已处理 |
+| `kh_merge_tags` | POST | `/admin/tags/merge` | 合并 Tag |
+| `kh_merge_knowledge` | POST | `/admin/knowledge/merge` | 合并知识条目 |
+| `kh_create_conflict` | POST | `/admin/conflicts` | 创建冲突报告 |
+| `kh_log_curation` | POST | `/admin/curation-logs` | 写入整理日志 |
 
-  // 发现问题（算法驱动）
-  rpc ListFlagged(ListFlaggedRequest) returns (ListFlaggedResponse);
-  rpc GetTagHealth(GetTagHealthRequest) returns (GetTagHealthResponse);
-  rpc FindSimilarKnowledge(FindSimilarRequest) returns (FindSimilarResponse);
+**系统接口（`/api/v1/system/`）：**
 
-  // 审查详情
-  rpc GetReview(GetReviewRequest) returns (GetReviewResponse);
-
-  // 执行操作
-  rpc UpdateKnowledge(UpdateKnowledgeRequest) returns (UpdateKnowledgeResponse);
-  rpc ArchiveKnowledge(ArchiveKnowledgeRequest) returns (ArchiveKnowledgeResponse);
-  rpc MarkCommentsProcessed(MarkProcessedRequest) returns (MarkProcessedResponse);
-  rpc MergeTags(MergeTagsRequest) returns (MergeTagsResponse);
-  rpc MergeKnowledge(MergeKnowledgeRequest) returns (MergeKnowledgeResponse);
-  rpc CreateConflictReport(CreateConflictRequest) returns (CreateConflictResponse);
-  rpc LogCuration(LogCurationRequest) returns (LogCurationResponse);
-
-  // 系统操作
-  rpc RecalculateWeights(RecalculateRequest) returns (RecalculateResponse);
-}
-
-// ===== 枚举 =====
-
-enum CommentType {
-  COMMENT_TYPE_UNSPECIFIED = 0;
-  COMMENT_TYPE_SUCCESS = 1;
-  COMMENT_TYPE_FAILURE = 2;
-  COMMENT_TYPE_SUPPLEMENT = 3;
-  COMMENT_TYPE_CORRECTION = 4;
-}
-
-enum CurationAction {
-  CURATION_ACTION_UNSPECIFIED = 0;
-  CURATION_ACTION_MERGE_SUPPLEMENT = 1;
-  CURATION_ACTION_APPLY_CORRECTION = 2;
-  CURATION_ACTION_DOWNGRADE = 3;
-  CURATION_ACTION_ARCHIVE = 4;
-  CURATION_ACTION_MERGE_TAGS = 5;
-  CURATION_ACTION_MERGE_KNOWLEDGE = 6;
-  CURATION_ACTION_CREATE_CONFLICT = 7;
-}
-
-enum KnowledgeStatus {
-  KNOWLEDGE_STATUS_UNSPECIFIED = 0;
-  KNOWLEDGE_STATUS_ACTIVE = 1;
-  KNOWLEDGE_STATUS_ARCHIVED = 2;
-}
-
-enum ConflictStatus {
-  CONFLICT_STATUS_UNSPECIFIED = 0;
-  CONFLICT_STATUS_OPEN = 1;
-  CONFLICT_STATUS_RESOLVED = 2;
-}
-
-// ===== 详细 Message 定义见 proto 文件 =====
-```
+| MCP Tool / CLI | HTTP Method | Path | 说明 |
+|---------------|------------|------|------|
+| `kh_recalculate_weights` | POST | `/system/recalculate-weights` | 批量重算权重 |
+| `kh delete` | DELETE | `/system/knowledge/{id}` | 硬删除 |
+| `kh restore` | POST | `/system/knowledge/{id}/restore` | 恢复归档 |
+| `kh status` | GET | `/system/status` | 系统状态 |
 
 ### 5.5 渐进式检索 Token 控制
 
@@ -606,42 +574,22 @@ Agent: kh_search(tags=["go", "concurrency"])
 
 ```
 knowledge-hub/
+├── api/
+│   └── openapi.yaml              # API 协议的单一事实来源 (OpenAPI 3.0)
 ├── cmd/
-│   ├── server/
-│   │   └── main.go              # 启动 Knowledge Hub API Server (gRPC)
-│   └── mcp/
-│       └── main.go              # 启动 MCP Shim (stdio, 连接 API Server)
+│   ├── kh-server/
+│   │   └── main.go              # 启动 Knowledge Hub API Server (HTTP)
+│   ├── mcp-shim/
+│   │   └── main.go              # 启动 MCP Shim (stdio, 连接 API Server)
+│   └── kh/
+│       └── main.go              # CLI 工具（人工审查 + 纠错）
+├── pkg/
+│   ├── corestore/               # 独立底层核心：存储引擎与检索算法
+│   └── khclient/                # 自动生成的强类型 HTTP Client
 ├── internal/
-│   ├── service/                 # 核心业务逻辑
-│   │   ├── knowledge.go         # 知识 CRUD + 渐进式检索
-│   │   ├── comment.go           # 评论管理
-│   │   ├── browse.go            # Faceted 浏览算法
-│   │   ├── weight.go            # 权重计算
-│   │   ├── curation.go          # 整理相关：flagging、tag健康、相似检测
-│   │   └── conflict.go          # 冲突报告管理
-│   ├── mcp/                     # MCP 协议层
-│   │   ├── server.go            # MCP server 初始化
-│   │   └── tools.go             # Tool 定义 + handler（gRPC client 转发）
-│   ├── grpc/                    # gRPC 服务层
-│   │   └── server.go            # gRPC server，调用 service 层
-│   ├── store/                   # 存储层
-│   │   ├── sqlite.go            # SQLite 连接管理 (WAL 模式)
-│   │   ├── knowledge.go         # Knowledge 表
-│   │   ├── tag.go               # Tag 表
-│   │   ├── comment.go           # Comment 表
-│   │   ├── curation_log.go      # CurationLog 表
-│   │   └── conflict.go          # ConflictReport 表
-│   └── domain/                  # 领域模型
-│       ├── knowledge.go
-│       ├── tag.go
-│       ├── comment.go
-│       ├── browse.go
-│       ├── curation.go
-│       └── conflict.go
-├── proto/                       # gRPC protobuf 定义
-│   └── knowledgehub/
-│       └── v1/
-│           └── knowledgehub.proto
+│   └── server/                  # kh-server 内部逻辑
+│       ├── handlers/            # 自动生成的 HTTP Handler (chi router)
+│       └── service/             # 业务逻辑编排
 ├── rules/                       # CLAUDE.md Rules
 │   └── knowledge-hub.md
 ├── skills/                      # Skill 定义
@@ -663,8 +611,8 @@ knowledge-hub/
 | 依赖 | 用途 |
 |------|------|
 | `github.com/modelcontextprotocol/go-sdk` | 官方 MCP Go SDK (stdio transport) |
-| `google.golang.org/grpc` | gRPC 框架 |
-| `google.golang.org/protobuf` | Protobuf 序列化 |
+| `github.com/oapi-codegen/oapi-codegen` | OpenAPI 3.0 代码生成（Server Handler + Client） |
+| `github.com/go-chi/chi/v5` | HTTP Router（oapi-codegen 生成目标） |
 | `modernc.org/sqlite` | 纯 Go SQLite（无 CGO 依赖） |
 | `github.com/google/uuid` | UUID 生成 |
 | `github.com/agnivade/levenshtein` | 编辑距离计算（tag 同义检测） |
@@ -771,19 +719,16 @@ knowledge-hub/
 
 ## 10. 实施步骤
 
-### Phase 1: 基础框架 + gRPC
+### Phase 1: 基础框架 + HTTP API
 1. 初始化 Go 项目，配置依赖
-2. 编写 proto 定义，生成 gRPC 代码
-3. 定义领域模型 (`internal/domain/`)
-4. 实现 SQLite 存储层 (`internal/store/`)，WAL 模式
-5. 实现核心业务逻辑 (`internal/service/`)
-6. 实现 gRPC 服务层 (`internal/grpc/`)
-7. 实现 API Server main.go
+2. 编写 OpenAPI 3.0 定义（`api/openapi.yaml`），生成 Server Handler + Client 代码
+3. 实现存储引擎 (`pkg/corestore/`)，SQLite WAL 模式
+4. 实现业务逻辑层 (`internal/server/service/`)
+5. 绑定生成的 HTTP Handler，实现 API Server main.go
 
 ### Phase 2: MCP Shim
-8. 实现 MCP Shim (`internal/mcp/`)，gRPC client 连接 API Server
-9. 实现 MCP Shim main.go
-10. 端到端测试：通过 Claude Code 调用工作 Agent MCP tools
+6. 实现 MCP Shim (`cmd/mcp-shim/`)，使用生成的 HTTP Client 连接 API Server
+7. 端到端测试：通过 Claude Code 调用工作 Agent MCP tools
 
 ### Phase 3: Agent 集成
 11. 编写 Rules 和 Skill 定义
