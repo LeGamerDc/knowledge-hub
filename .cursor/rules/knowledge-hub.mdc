@@ -1,3 +1,8 @@
+---
+description: Knowledge Hub 项目上下文、开发规范与 memory 管理规则
+alwaysApply: true
+---
+
 # Knowledge Hub - Agent 知识共享平台
 
 ## 项目概述
@@ -5,7 +10,7 @@
 Go 项目。两个独立进程：MCP Shim（stdio，转发请求）+ Knowledge Hub API Server（HTTP/JSON，SQLite WAL）。
 OpenAPI 3.0 为 API 单一事实来源，oapi-codegen 生成 Server Handler（chi）+ 强类型 Client。
 
-前请先载入 `memory/progress.md` 了解当前项目进度
+**开始工作前请先载入 `memory/progress.md` 了解当前项目进度。**
 
 ## 文档索引
 
@@ -60,7 +65,7 @@ knowledge-hub/
 - SQLite 使用 WAL 模式，modernc.org/sqlite 纯 Go 驱动
 - 错误处理：API 层统一 JSON 错误响应，内部用 Go error wrapping
 - 文档维护：修改方案设计、代码设计后需要同步维护文档
-- 文档格式：文档中的文本流程图绘制使用英文，避免markdown格式问题
+- 文档格式：文档中的文本流程图绘制使用英文，避免 markdown 格式问题
 
 ## memory/ 目录结构
 
